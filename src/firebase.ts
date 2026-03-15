@@ -1,7 +1,16 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
-import firebaseConfig from "../firebase-applet-config.json";
+// @ts-ignore
+import configString from "../firebase-applet-config.json?raw";
+
+const firebaseConfig = JSON.parse(configString);
+
+console.log("Firebase config:", firebaseConfig);
+
+if (!firebaseConfig || !firebaseConfig.apiKey) {
+  throw new Error("Firebase config is missing or invalid. Config: " + JSON.stringify(firebaseConfig));
+}
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -11,8 +20,12 @@ export const loginWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
   try {
     await signInWithPopup(auth, provider);
-  } catch (error) {
-    console.error("Error signing in with Google", error);
+  } catch (error: any) {
+    if (error.code === 'auth/popup-closed-by-user') {
+      console.log("Sign-in popup was closed by the user.");
+    } else {
+      console.error("Error signing in with Google", error);
+    }
   }
 };
 

@@ -6,6 +6,17 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, onSnapshot, query, orderBy, where, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { GoogleGenAI, Type } from '@google/genai';
 
+declare global {
+  interface Window {
+    aistudio?: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
+
+import { VisionFlowLogo } from './components/Logo';
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'live' | 'tasks'>('dashboard');
@@ -24,6 +35,9 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -72,17 +86,21 @@ export default function App() {
   const startScreenCapture = async () => {
     try {
       setErrorMsg(null);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error("Screen sharing is not supported on this browser or device.");
+      }
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'browser' }
+        video: true
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
       streamRef.current = stream;
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error sharing screen: ", err);
-      setErrorMsg("Screen sharing permission was denied. Please allow screen sharing to use the Live Agent.");
+      const msg = err.message || "Screen sharing permission was denied.";
+      setErrorMsg(`${msg} Please allow screen sharing to use the Live Agent. If you are using this inside a preview, try opening the app in a new tab.`);
       return false;
     }
   };
@@ -95,9 +113,23 @@ export default function App() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    setUploadedImage(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedImage(reader.result as string);
+        setErrorMsg(null);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const captureFrame = (): string | null => {
+    if (uploadedImage) return uploadedImage;
     if (!videoRef.current || !canvasRef.current) return null;
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -118,7 +150,7 @@ export default function App() {
     if (!command.trim()) return;
     
     setErrorMsg(null);
-    if (!streamRef.current) {
+    if (!streamRef.current && !uploadedImage) {
       const started = await startScreenCapture();
       if (!started) return;
     }
@@ -142,7 +174,9 @@ export default function App() {
       // 2. Capture Frame and Analyze
       const frameData = captureFrame();
       if (frameData) {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const apiKey = process.env.GEMINI_API_KEY;
+        console.log("Using API Key:", apiKey ? "Present" : "Missing");
+        const ai = new GoogleGenAI({ apiKey });
         
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -284,10 +318,13 @@ export default function App() {
           className="max-w-md w-full p-8 tech-panel rounded-xl text-center relative overflow-hidden"
         >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
-          <div className="w-16 h-16 bg-primary/10 border border-primary/30 rounded flex items-center justify-center mx-auto mb-6">
-            <Eye className="w-8 h-8 text-primary" />
+          <div className="w-16 h-16 flex items-center justify-center mx-auto mb-6">
+            <VisionFlowLogo className="w-16 h-16" />
           </div>
-          <h1 className="text-2xl font-mono font-bold mb-2 tracking-wider uppercase text-primary">VisionFlow AI</h1>
+          <h1 className="text-2xl font-mono font-bold mb-2 tracking-wider uppercase">
+            <span className="text-[#005ea3]">Vision</span>
+            <span className="text-[#00b4d8]">Flow</span> AI
+          </h1>
           <p className="text-text-muted font-mono text-sm mb-8 uppercase tracking-widest">System Authentication</p>
           <button 
             onClick={loginWithGoogle}
@@ -311,10 +348,11 @@ export default function App() {
       {/* Sidebar */}
       <aside className="w-64 border-r border-border bg-surface flex flex-col">
         <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary/20 border border-primary rounded flex items-center justify-center">
-            <Eye className="w-5 h-5 text-primary" />
-          </div>
-          <span className="font-mono font-bold text-lg tracking-wider uppercase text-primary">VisionFlow</span>
+          <VisionFlowLogo className="w-8 h-8" />
+          <span className="font-mono font-bold text-lg tracking-wider uppercase">
+            <span className="text-[#005ea3]">Vision</span>
+            <span className="text-[#00b4d8]">Flow</span>
+          </span>
         </div>
         
         <nav className="flex-1 px-4 py-4 space-y-2">
@@ -398,8 +436,29 @@ export default function App() {
         {errorMsg && (
           <div className="mx-8 mt-4 p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-center gap-3 text-red-400 z-20 relative">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <p className="text-sm font-medium">{errorMsg}</p>
-            <button onClick={() => setErrorMsg(null)} className="ml-auto hover:text-red-300">✕</button>
+            <p className="text-sm font-medium flex-1">{errorMsg}</p>
+            {errorMsg.includes("API key") && window.aistudio && (
+              <button 
+                onClick={async () => {
+                  try {
+                    await window.aistudio.openSelectKey();
+                    setErrorMsg(null);
+                  } catch (e) {
+                    console.error("Error opening key selector", e);
+                  }
+                }}
+                className="px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary rounded text-xs font-mono uppercase tracking-wider transition-colors"
+              >
+                Select API Key
+              </button>
+            )}
+            <button 
+              onClick={() => window.open(window.location.href, '_blank')}
+              className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 rounded text-xs font-mono uppercase tracking-wider transition-colors"
+            >
+              Open in New Tab
+            </button>
+            <button onClick={() => setErrorMsg(null)} className="hover:text-red-300 ml-2">✕</button>
           </div>
         )}
 
@@ -506,6 +565,14 @@ export default function App() {
                       <span className="text-xs font-mono uppercase tracking-wider text-text-muted">Agent Vision</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      {uploadedImage && (
+                        <button 
+                          onClick={() => setUploadedImage(null)}
+                          className="text-xs font-mono text-text-muted hover:text-white px-2 py-1 bg-surface border border-border rounded transition-colors"
+                        >
+                          Clear Image
+                        </button>
+                      )}
                       {agentStatus !== 'idle' && (
                         <span className="flex items-center gap-2 text-xs font-medium text-red-400 bg-red-500/10 px-2 py-1 rounded-md">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -515,25 +582,52 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex-1 bg-black relative flex items-center justify-center overflow-hidden">
-                    <video 
-                      ref={videoRef} 
-                      autoPlay 
-                      playsInline 
-                      muted 
-                      className={`max-w-full max-h-full object-contain ${!streamRef.current ? 'hidden' : ''}`}
-                    />
+                    {uploadedImage ? (
+                      <img src={uploadedImage} alt="Uploaded screenshot" className="max-w-full max-h-full object-contain" />
+                    ) : (
+                      <video 
+                        ref={videoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        className={`max-w-full max-h-full object-contain ${!streamRef.current ? 'hidden' : ''}`}
+                      />
+                    )}
                     <canvas ref={canvasRef} className="hidden" />
                     
-                    {!streamRef.current && (
-                      <div className="text-center text-gray-500 flex flex-col items-center">
+                    {!streamRef.current && !uploadedImage && (
+                      <div className="text-center text-text-muted flex flex-col items-center">
                         <Eye className="w-12 h-12 mb-4 opacity-20" />
-                        <p>Waiting for screen share...</p>
-                        <button 
-                          onClick={startScreenCapture}
-                          className="mt-4 px-4 py-2 bg-surface border border-border rounded-lg hover:bg-surface-hover text-sm"
-                        >
-                          Share Screen
-                        </button>
+                        <p className="font-mono text-sm uppercase tracking-wider">Waiting for screen share...</p>
+                        <div className="flex gap-3 mt-6">
+                          <button 
+                            onClick={startScreenCapture}
+                            className="px-4 py-2 bg-primary/20 border border-primary/50 text-primary rounded hover:bg-primary/30 text-xs font-mono uppercase tracking-wider transition-colors"
+                          >
+                            Share Screen
+                          </button>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            ref={fileInputRef} 
+                            onChange={handleFileUpload} 
+                            className="hidden" 
+                          />
+                          <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="px-4 py-2 bg-secondary/20 border border-secondary/50 text-secondary rounded hover:bg-secondary/30 text-xs font-mono uppercase tracking-wider transition-colors"
+                          >
+                            Upload Screenshot
+                          </button>
+                        </div>
+                        <div className="mt-4">
+                          <button 
+                            onClick={() => window.open(window.location.href, '_blank')}
+                            className="px-4 py-2 bg-surface border border-border text-text-muted rounded hover:bg-surface-hover hover:text-white text-xs font-mono uppercase tracking-wider transition-colors"
+                          >
+                            Open in New Tab
+                          </button>
+                        </div>
                       </div>
                     )}
                     
