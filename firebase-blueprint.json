@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the VisionFlow AI platform",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "email", "createdAt", "role"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "An AI agent session",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "command": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "command", "status", "createdAt", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A specific task within a session",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in-progress", "completed", "failed"] },
+        "result": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "userId", "description", "status", "createdAt"]
+    },
+    "ActionLog": {
+      "title": "ActionLog",
+      "description": "Log of an action taken by the AI",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "userId": { "type": "string" },
+        "actionType": { "type": "string" },
+        "target": { "type": "string" },
+        "value": { "type": "string" },
+        "reasoning": { "type": "string" },
+        "screenshotUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "userId", "actionType", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/Session" },
+      "description": "AI agent sessions"
+    },
+    "tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Tasks within sessions"
+    },
+    "actionLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ActionLog" },
+      "description": "Logs of actions taken"
+    }
+  }
+}

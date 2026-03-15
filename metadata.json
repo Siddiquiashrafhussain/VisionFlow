@@ -1,0 +1,5 @@
+{
+  "name": "VisionFlow AI",
+  "description": "The Universal AI UI Navigator that can see your screen, understand any website or app UI, and complete tasks automatically using natural language.",
+  "requestFramePermissions": ["camera", "microphone", "display-capture"]
+}
